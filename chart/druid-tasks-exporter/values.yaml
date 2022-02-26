@@ -1,0 +1,30 @@
+replicaCount: 1
+
+image:
+  repository: nginx
+  pullPolicy: IfNotPresent
+  tag: ""
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  name: ""
+
+podAnnotations: {}
+
+podSecurityContext: {}
+
+securityContext: {}
+
+metrics:
+  XXX
+
+resources: {}
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
