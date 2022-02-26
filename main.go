@@ -11,9 +11,11 @@ import (
 	"net/http"
 )
 
+const taskStatSQL = "SELECT type,status,count(*) AS total FROM sys.tasks GROUP BY type,status"
+
 var (
 	addr     = flag.String("listen-address", ":8080", "The address to listen on for HTTP requests.")
-	druidUri = flag.String("druid-uri", "http://BROKER:8082/druid/v2/sql/", "The URI to reach Druid's router or broker SQL API.")
+	druidUri = flag.String("druid-uri", "http://BROKER:8082/druid/v2/sql/", "The URI to reach Druid's SQL API.")
 )
 
 type Task struct {
@@ -23,12 +25,12 @@ type Task struct {
 }
 
 type DruidTasksExporter struct {
-	Tasks *prometheus.Desc
+	TasksStats *prometheus.Desc
 }
 
 func NewDruidTasksExporter() *DruidTasksExporter {
 	return &DruidTasksExporter{
-		Tasks: prometheus.NewDesc(
+		TasksStats: prometheus.NewDesc(
 			"dte_druid_tasks_total",
 			"Total number of Druid tasks per type and status.",
 			[]string{"type", "status"},
@@ -36,10 +38,10 @@ func NewDruidTasksExporter() *DruidTasksExporter {
 		)}
 }
 
-func (d *DruidTasksExporter) RetrieveMetrics() []Task {
+func (d *DruidTasksExporter) RetrieveStats() []Task {
 
 	query, _ := json.Marshal(map[string]string{
-		"query": "SELECT type,status,count(*) AS total FROM sys.tasks GROUP BY status,type",
+		"query": taskStatSQL,
 	})
 
 	reqBody := bytes.NewBuffer(query)
@@ -55,6 +57,7 @@ func (d *DruidTasksExporter) RetrieveMetrics() []Task {
 	}
 
 	var tasks []Task
+	// If some fields are missing, will crash later.
 	err = json.Unmarshal(body, &tasks)
 	if err != nil {
 		log.Fatalf("An Error occured while unmarshalling %s: %v", body, err)
@@ -64,14 +67,14 @@ func (d *DruidTasksExporter) RetrieveMetrics() []Task {
 }
 
 func (c *DruidTasksExporter) Describe(ch chan<- *prometheus.Desc) {
-	ch <- c.Tasks
+	ch <- c.TasksStats
 }
 
 func (d *DruidTasksExporter) Collect(ch chan<- prometheus.Metric) {
-	tasks := d.RetrieveMetrics()
+	tasks := d.RetrieveStats()
 	for _, task := range tasks {
 		ch <- prometheus.MustNewConstMetric(
-			d.Tasks,
+			d.TasksStats,
 			prometheus.GaugeValue,
 			float64(task.Total),
 			task.Type,
@@ -83,11 +86,11 @@ func (d *DruidTasksExporter) Collect(ch chan<- prometheus.Metric) {
 func main() {
 	flag.Parse()
 
-	d := NewDruidTasksExporter()
+	dte := NewDruidTasksExporter()
 	reg := prometheus.NewPedanticRegistry()
-	reg.MustRegister(d)
+	reg.MustRegister(dte)
 
 	http.Handle("/metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{}))
-	log.Printf("The server is listening on %s", *addr)
+	log.Printf("The server is listening on %s and scraping %s", *addr, *druidUri)
 	log.Fatal(http.ListenAndServe(*addr, nil))
 }
